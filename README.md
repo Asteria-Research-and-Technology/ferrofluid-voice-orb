@@ -45,6 +45,7 @@ Everything renders in one fragment shader. A CPU simulation drives up to 96 meta
 **2026-08-28**
 
 - Fullscreen mode: a Fullscreen button in the bar (and the F key) hides the preset rail and the bottom bar, asks the browser for true fullscreen, and leaves the single orb undulating in the center. Esc or the faint Exit chip in the corner restores the interface.
+- The cursor stays hidden until the mouse moves, and slips away again after a few still seconds, so nothing sits in the shot.
 - Wisp is now the opening preset. It swapped slots with Baseline, which now lives at 10; every preset is still one tap away.
 
 **2026-08-27**

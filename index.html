@@ -103,6 +103,7 @@
   }
   body.zen .zenExit{display:block}
   .zenExit:hover{color:rgba(var(--fg),.85);border-color:rgba(var(--fg),.35)}
+  body.nocursor, body.nocursor *{cursor:none!important}
   .bar .mark{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:rgba(var(--fg),.34)}
   .bar .mark b{color:rgba(var(--fg),.8);font-weight:500}
   .spacer{flex:1}
@@ -1510,6 +1511,18 @@ function setZen(on){
 }
 fsBtn.addEventListener('click', () => setZen(true));
 zenExit.addEventListener('click', () => setZen(false));
+
+/* the cursor stays out of the shot until it moves, then slips away again */
+let cursorTimer = null;
+function hideCursor(){ document.body.classList.add('nocursor'); }
+function wakeCursor(){
+  document.body.classList.remove('nocursor');
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(hideCursor, 2800);
+}
+addEventListener('pointermove', wakeCursor, {passive:true});
+addEventListener('pointerdown', wakeCursor, {passive:true});
+hideCursor();
 document.addEventListener('fullscreenchange', () => {
   if(!document.fullscreenElement && zen){ zen = false; document.body.classList.remove('zen'); }
 });
