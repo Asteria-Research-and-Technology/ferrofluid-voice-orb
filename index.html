@@ -18,12 +18,12 @@
   body{font-family:"Space Grotesk",-apple-system,BlinkMacSystemFont,sans-serif;color:rgb(var(--fg));-webkit-font-smoothing:antialiased;transition:background .35s}
   canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
 
-  .stage{position:fixed;left:0;top:0;bottom:64px;right:0;pointer-events:none;transition:right .28s ease}
+  .stage{position:fixed;left:0;top:0;bottom:64px;right:0;pointer-events:none;transition:right .28s ease,bottom .35s ease}
   body.side-open .stage{right:312px}
 
   .rail{
     position:fixed;top:20px;left:50%;transform:translateX(-50%);
-    display:flex;gap:6px;z-index:6;transition:margin-right .28s ease;
+    display:flex;gap:6px;z-index:6;transition:margin-right .28s ease,opacity .35s ease;
   }
   body.side-open .rail{margin-right:312px}
   .chip{
@@ -41,6 +41,13 @@
   .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   .chip .nm{display:inline}
   @media (max-width:820px){ .chip .nm{display:none} }
+  @media (max-width:960px){ .meters{display:none} }
+  @media (max-width:760px){
+    .bar{gap:10px;padding:0 12px}
+    .bar .mark{display:none}
+    button.btn{padding:10px 12px;letter-spacing:.12em}
+  }
+  @media (max-width:700px){ .state span{display:none} }
 
   .side{
     position:fixed;top:0;bottom:64px;right:0;width:312px;
@@ -79,7 +86,23 @@
     position:fixed;left:0;right:0;bottom:0;height:64px;
     border-top:1px solid rgba(var(--fg),.09);background:var(--bg);
     display:flex;align-items:center;gap:18px;padding:0 22px;
+    transition:opacity .35s ease;
   }
+
+  /* fullscreen: everything steps out of the room except the orb */
+  body.zen .rail, body.zen .bar{opacity:0;pointer-events:none}
+  body.zen .stage{bottom:0}
+  .zenExit{
+    position:fixed;top:16px;right:18px;z-index:9;display:none;
+    font:inherit;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    background:color-mix(in srgb, var(--bg) 60%, transparent);
+    backdrop-filter:blur(6px);
+    border:1px solid rgba(var(--fg),.12);border-radius:2px;
+    color:rgba(var(--fg),.30);padding:8px 12px;cursor:pointer;
+    transition:color .18s,border-color .18s;
+  }
+  body.zen .zenExit{display:block}
+  .zenExit:hover{color:rgba(var(--fg),.85);border-color:rgba(var(--fg),.35)}
   .bar .mark{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:rgba(var(--fg),.34)}
   .bar .mark b{color:rgba(var(--fg),.8);font-weight:500}
   .spacer{flex:1}
@@ -153,7 +176,7 @@
 <aside class="side" id="side"></aside>
 
 <div class="bar">
-  <div class="mark"><b>Ferrofluid</b> &nbsp;/&nbsp; <span id="modeName">Baseline</span> &nbsp;/&nbsp; v1.0</div>
+  <div class="mark"><b>Ferrofluid</b> &nbsp;/&nbsp; <span id="modeName">Wisp</span> &nbsp;/&nbsp; v1.0</div>
   <div class="state"><i class="dot" id="dot"></i><span id="stateLabel">Idle</span></div>
   <div class="spacer"></div>
   <div class="meters">
@@ -166,8 +189,10 @@
   <button class="btn quiet" id="themeBtn">Light</button>
   <button class="btn quiet" id="allBtn">Controls</button>
   <button class="btn quiet" id="resetBtn">Reset</button>
+  <button class="btn quiet" id="fsBtn">Fullscreen</button>
   <button class="btn" id="micBtn">Start listening</button>
 </div>
+<button class="zenExit" id="zenExit">Exit</button>
 <div class="toast" id="toast"></div>
 
 <div class="intro" id="intro">
@@ -489,8 +514,11 @@ function simShapePoint(sim, t, out){
 }
 
 const PRESETS = [
-  { name:'Baseline', sens:1.00, gate:0.35, turb:0.65, sharp:0.60, visc:0.60,
-    weight:0.30, splash:0.70, reach:0.56, ball:0.150, rest:0.00, gathr:1.00, spikes:12, hold:1.10 },
+  /* 1: the opening face. Not ferrofluid at all: a soft-bodied blob of
+     light, pale mint with a blue fringe, drifting between pebble shapes.
+     A calm presence; voice gives it a gentle swell and a slow jiggle. */
+  { name:'Wisp', wisp:1, sens:1.05, gate:0.32, turb:0.30, sharp:0.50, visc:0.70,
+    weight:0.20, splash:0.45, reach:0.40, ball:0.300, rest:1.00, gathr:1.00, spikes:5, hold:1.20 },
 
   { name:'Syrup', sens:1.10, gate:0.30, turb:0.35, sharp:0.30, visc:0.92,
     weight:0.16, splash:0.30, reach:0.62, ball:0.185, rest:0.00, gathr:1.00, spikes:9, hold:1.60 },
@@ -526,11 +554,10 @@ const PRESETS = [
     weight:0.28, splash:0.80, reach:0.30, ball:0.230, rest:0.00, gathr:1.00, spikes:15, hold:1.30,
     shape:4, thick:0.045, morph:1 },
 
-  /* 10: not ferrofluid at all. A soft-bodied blob of light: pale mint mass,
-     blue fringe, drifting between pebble shapes. A calm presence; voice
-     gives it a gentle swell and a slow jiggle, never a spike. */
-  { name:'Wisp', wisp:1, sens:1.05, gate:0.32, turb:0.30, sharp:0.50, visc:0.70,
-    weight:0.20, splash:0.45, reach:0.40, ball:0.300, rest:1.00, gathr:1.00, spikes:5, hold:1.20 },
+  /* 10: the reference ferrofluid, moved out of slot 1 when the wisp
+     became the opening preset. */
+  { name:'Baseline', sens:1.00, gate:0.35, turb:0.65, sharp:0.60, visc:0.60,
+    weight:0.30, splash:0.70, reach:0.56, ball:0.150, rest:0.00, gathr:1.00, spikes:12, hold:1.10 },
 
   /* 11: the wisp in daylight. White ground, pale blue body, blue rim. */
   { name:'Halo', wisp:2, sens:1.05, gate:0.32, turb:0.30, sharp:0.50, visc:0.70,
@@ -1461,6 +1488,35 @@ setTheme(false);   /* dark is the default; the Light button switches it */
 
 micBtn.addEventListener('click', () => listening ? stopMic() : startMic());
 
+/* fullscreen: hide every control and leave the orb alone in the room */
+const fsBtn = document.getElementById('fsBtn');
+const zenExit = document.getElementById('zenExit');
+let zen = false;
+function setZen(on){
+  zen = on;
+  document.body.classList.toggle('zen', on);
+  if(on){
+    document.body.classList.remove('side-open');
+    allBtn.textContent = 'Controls';
+    fsBtn.blur();
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if(req && !document.fullscreenElement){
+      try{ Promise.resolve(req.call(el)).catch(() => {}); }catch(err){}
+    }
+  }else if(document.fullscreenElement && document.exitFullscreen){
+    document.exitFullscreen().catch(() => {});
+  }
+}
+fsBtn.addEventListener('click', () => setZen(true));
+zenExit.addEventListener('click', () => setZen(false));
+document.addEventListener('fullscreenchange', () => {
+  if(!document.fullscreenElement && zen){ zen = false; document.body.classList.remove('zen'); }
+});
+addEventListener('keydown', e => {
+  if(e.key === 'Escape' && zen && !document.fullscreenElement) setZen(false);
+});
+
 addEventListener('keydown', e => {
   if(e.target !== document.body) return;
   if(e.code === 'Space'){ e.preventDefault(); listening ? stopMic() : startMic(); }
@@ -1468,6 +1524,7 @@ addEventListener('keydown', e => {
   if(e.key === '0' && sims.length > 9) selectPreset(9);
   if(e.key === 'i') setTheme(!inverted);
   if(e.key === 'c') allBtn.click();
+  if(e.key === 'f') setZen(!zen);
   if(e.key === 'ArrowRight') selectPreset((active + 1) % sims.length);
   if(e.key === 'ArrowLeft') selectPreset((active - 1 + sims.length) % sims.length);
 });
