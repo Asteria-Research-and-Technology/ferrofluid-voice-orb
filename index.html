@@ -196,6 +196,9 @@ uniform int   uCount;
 uniform float uTime;
 uniform float uWarp;
 uniform float uInvert;
+uniform float uStyle;
+uniform vec2  uLight;
+uniform float uGlow;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
 
@@ -232,6 +235,76 @@ float fieldGrad(vec2 p, out vec2 grad){
 void main(){
   vec2 p = (gl_FragCoord.xy - uCenter) / uDiscR;
   float r = length(p);
+
+  if(uStyle > 0.5){
+    /* Wisp: an emissive soft body, nothing ferrofluid about it.
+       Pale mint mass, cyan-to-indigo fringe at the silhouette, blue halo
+       bleeding into black. The blue reaches furthest out and the red pulls
+       furthest in, which is what makes the rim read as a lens fringe. */
+    vec2 pw = p + turbulence(p*0.7, uTime*0.35) * uWarp;
+    vec2 grad;
+    float f = fieldGrad(pw, grad);
+    float gmag = max(length(grad), 1e-4);
+    float sd = (f - 1.0) / gmag;
+    float sdo = min(sd, 0.0);
+    /* sd is only a distance near the isoline; deep inside the field the
+       gradient spikes at ball centers and sd dips, so gate everything
+       edge-flavored on the raw field too */
+    float inside = smoothstep(1.12, 1.55, f);
+    float haloM = 1.0 - inside;
+
+    vec2 lp = pw - uLight;
+    float core = exp(-dot(lp, lp) * 2.4);
+
+    vec3 wcol;
+    if(uStyle > 1.5){
+      /* Halo: the same body drawn in daylight. Paper ground, pale blue
+         inside, the rim an honest blue line. On white a halo cannot add
+         light, so it darkens toward blue instead. */
+      wcol = vec3(0.965, 0.972, 0.985);
+      wcol = mix(wcol, vec3(0.700, 0.800, 0.970), exp(sdo*10.0) * 0.38 * uGlow * haloM);
+      wcol = mix(wcol, vec3(0.360, 0.540, 0.960), exp(sdo*44.0) * 0.72 * uGlow * haloM);
+
+      vec3 body = mix(vec3(0.780, 0.872, 0.985), vec3(0.930, 0.962, 1.000), core*0.80);
+      body = mix(body, vec3(0.705, 0.822, 0.980), smoothstep(0.05, -0.45, pw.y) * 0.40);
+      float a = smoothstep(-0.008, 0.016, sd);
+      wcol = mix(wcol, body, max(a, inside));
+      float rim = smoothstep(0.026, 0.007, abs(sd)) * haloM;
+      wcol = mix(wcol, vec3(0.300, 0.500, 0.960), rim*0.80);
+    } else {
+      wcol = vec3(0.006, 0.009, 0.016);
+      wcol += vec3(0.030, 0.105, 0.230) * (uGlow * exp(sdo * 10.0)) * haloM;
+      wcol += vec3(0.110, 0.260, 0.850) * (uGlow * 0.70 * exp(sdo * 44.0)) * haloM;
+
+      vec3 body = mix(vec3(0.760, 0.905, 0.845), vec3(0.955, 1.000, 0.965), core*0.80);
+      body = mix(body, vec3(0.700, 0.900, 0.790), smoothstep(0.05, -0.45, pw.y) * 0.40);
+      body *= 1.0 - 0.070 * smoothstep(0.085, 0.015, sd) * haloM;
+      body *= 0.90 + 0.10 * uGlow;
+
+      vec3 cov = vec3(smoothstep(0.000, 0.030, sd),
+                      smoothstep(-0.010, 0.024, sd),
+                      smoothstep(-0.022, 0.016, sd));
+      cov = max(cov, vec3(inside));
+      wcol = wcol*(1.0 - cov) + body*cov;
+    }
+
+    wcol = mix(wcol, vec3(1.0) - wcol, uInvert);
+    wcol += (hash(gl_FragCoord.xy + fract(uTime)) - 0.5) * 0.006;
+
+    if(uStyle < 1.5){
+      /* film hiss: sparse white dust, re-rolled at 24 fps like a print */
+      float fr = floor(uTime*24.0);
+      float cs = max(uDiscR*0.011, 2.0);
+      vec2 cell = floor(gl_FragCoord.xy / cs);
+      float dust = step(0.9990, hash(cell + vec2(fr*0.37, fr*1.13)));
+      vec2 lc = fract(gl_FragCoord.xy / cs) - 0.5;
+      float shape = smoothstep(0.50, 0.10, length(lc));
+      float bright = 0.25 + 0.55*hash(cell + vec2(fr*2.71, 41.7));
+      wcol += dust * shape * bright * (1.0 - uInvert);
+    }
+    gl_FragColor = vec4(wcol, 1.0);
+    return;
+  }
 
   vec3 col = vec3(0.030, 0.028, 0.034);
   col += 0.016 * smoothstep(2.0, 0.7, r);
@@ -287,6 +360,9 @@ const U = {
   time:   gl.getUniformLocation(prog,'uTime'),
   warp:   gl.getUniformLocation(prog,'uWarp'),
   invert: gl.getUniformLocation(prog,'uInvert'),
+  style:  gl.getUniformLocation(prog,'uStyle'),
+  light:  gl.getUniformLocation(prog,'uLight'),
+  glow:   gl.getUniformLocation(prog,'uGlow'),
 };
 
 /* ================================================================== */
@@ -449,6 +525,16 @@ const PRESETS = [
   { name:'Sigil', sens:1.10, gate:0.36, turb:0.55, sharp:0.85, visc:0.48,
     weight:0.28, splash:0.80, reach:0.30, ball:0.230, rest:0.00, gathr:1.00, spikes:15, hold:1.30,
     shape:4, thick:0.045, morph:1 },
+
+  /* 10: not ferrofluid at all. A soft-bodied blob of light: pale mint mass,
+     blue fringe, drifting between pebble shapes. A calm presence; voice
+     gives it a gentle swell and a slow jiggle, never a spike. */
+  { name:'Wisp', wisp:1, sens:1.05, gate:0.32, turb:0.30, sharp:0.50, visc:0.70,
+    weight:0.20, splash:0.45, reach:0.40, ball:0.300, rest:1.00, gathr:1.00, spikes:5, hold:1.20 },
+
+  /* 11: the wisp in daylight. White ground, pale blue body, blue rim. */
+  { name:'Halo', wisp:2, sens:1.05, gate:0.32, turb:0.30, sharp:0.50, visc:0.70,
+    weight:0.20, splash:0.45, reach:0.40, ball:0.300, rest:1.00, gathr:1.00, spikes:5, hold:1.20 },
 ];
 /* 1-6 predate the shape system, so give them its neutral values */
 for(const p of PRESETS){
@@ -518,7 +604,86 @@ function moundY(x, level){
   return -0.66 + 0.17*Math.exp(-(x*x)/0.20) + level*0.11;
 }
 
+/* ------------------------------------------------------------------ */
+/* Wisp: its own tiny sim. One core ball and three slow orbiters on    */
+/* damped springs; the metaball union is the pebble that never stops   */
+/* drifting between shapes.                                            */
+/* ------------------------------------------------------------------ */
+function stepWisp(sim, dt, time){
+  const p = sim.e;
+  if(!sim.w){
+    sim.w = { rot: Math.random()*6.28, harm: [], lx: 0.20, ly: 0.26,
+              la: Math.random()*6.28, glow: 0.8, swell: 0 };
+    for(let i=0;i<3;i++) sim.w.harm.push({
+      off: 0, vel: 0, ph: Math.random()*6.28,
+      rate: 0.16 + 0.10*i + Math.random()*0.08,
+    });
+  }
+  const w = sim.w;
+  sim.excite = Math.max(0, sim.excite - dt*1.5);
+
+  /* the tumble, quicker when it is paying attention */
+  w.rot += dt*(0.30 + 0.18*sim.attn + p.turb*0.14);
+
+  /* the wobble lives on springs so a push rings out instead of snapping;
+     a whisper of random drive keeps the surface alive even in silence */
+  for(const h of w.harm){
+    h.ph += dt*h.rate*Math.PI*2*(0.6 + p.turb*0.6);
+    h.vel += -h.off*7.5*dt;
+    h.vel += (Math.random() - 0.5)*2.0*dt*(0.6 + G.life);
+    h.vel -= h.vel*Math.min(1, dt*(1.6 + p.visc*2.4));
+    h.off += h.vel*dt;
+  }
+
+  /* calm presence: level swells it a little, attention a little more */
+  const st = sim.level*0.20 + sim.attn*0.06;
+  w.swell += (st - w.swell)*Math.min(1, dt*3.0);
+
+  /* the inner light wanders on its own and leans where the focus leans */
+  w.la += dt*0.30;
+  const tx = 0.20 + Math.cos(w.la)*0.10 + sim.leanX*1.6;
+  const ty = 0.26 + Math.sin(w.la*0.77)*0.09 + sim.leanY*1.2;
+  w.lx += (tx - w.lx)*Math.min(1, dt*0.8);
+  w.ly += (ty - w.ly)*Math.min(1, dt*0.8);
+
+  const gt = 0.72 + sim.level*0.45 + onsetPulse*0.18;
+  w.glow += (gt - w.glow)*Math.min(1, dt*5.0);
+}
+
+function buildWispBalls(sim, time){
+  const w = sim.w, p = sim.e, B = sim.balls;
+  if(!w) return 0;
+  let n = 0;
+  const put = (x,y,r) => { B[n*3]=x; B[n*3+1]=y; B[n*3+2]=r; n++; };
+  const breath = Math.sin(sim.breathT*Math.PI*2);
+  const swell = (1 + G.life*0.050*breath + w.swell) * (p.ball/0.30);
+  const cx = sim.leanX*0.9 + Math.sin(time*0.31 + sim.seed)*0.048;
+  const cy = sim.leanY*0.9 + sim.bob*0.10 + Math.cos(time*0.27 + sim.seed*2)*0.042;
+  /* three big overlapping lobes make the silhouette; lobe 0 is the nose
+     with the longest reach, which is what turns the circle into an egg
+     or a teardrop as it swings around. Recentre on the lobes' mean so
+     the mass stays put while the outline moves. */
+  const DB = [0.165, 0.115, 0.100];
+  const DR = [0.125, 0.095, 0.080];
+  const RB = [0.262, 0.246, 0.236];
+  let mx = 0, my = 0;
+  const L = [];
+  for(let i=0;i<3;i++){
+    const h = w.harm[i];
+    const a = w.rot + i*(Math.PI*2/3) + Math.sin(h.ph)*1.05;
+    const d = (DB[i] + DR[i]*Math.sin(h.ph*0.9 + i*1.7) + h.off) * swell;
+    const lx = Math.cos(a)*d, ly = Math.sin(a)*d*0.92;
+    L.push([lx, ly, (RB[i] + 0.026*Math.sin(h.ph*1.3 + i)) * swell]);
+    mx += lx/3; my += ly/3;
+  }
+  const ox = cx - mx*0.62, oy = cy - my*0.62;
+  put(ox, oy, 0.16*swell);
+  for(const l of L) put(ox + l[0], oy + l[1], l[2]);
+  return n;
+}
+
 function buildBalls(sim, time){
+  if(sim.p.wisp) return buildWispBalls(sim, time);
   const p = sim.e, level = sim.level, g = sim.gather;
   const B = sim.balls;
   let n = 0;
@@ -732,6 +897,9 @@ function stepSim(sim, dt, time){
             * Math.min(1, p.sens) * (0.25 + 0.75*sim.voiced);
   sim.bass = bands.low;
 
+  /* the wisp shares the inner life above, none of the fluid below */
+  if(p.wisp){ stepWisp(sim, dt, time); return; }
+
   /* gather: rises while there is voice, falls under gravity when there isn't */
   const holding = sim.gatherHold > 0;
   if(sim.voiced > 0.5){
@@ -910,6 +1078,12 @@ function splash(sim, strength){
   sim.coil = Math.min(1, sim.coil + strength*0.9);        /* pull in, then burst */
   sim.bobVel += strength*0.55*G.life;                     /* the whole body answers */
   if(Math.random() < 0.22 + strength*0.3) sim.focusTimer = Math.min(sim.focusTimer, 0.1);
+  if(sim.p.wisp){
+    /* a syllable is a soft push into the wobble springs, not a spike */
+    if(sim.w) for(const h of sim.w.harm)
+      h.vel += (Math.random() - 0.5)*2.4*strength*(0.4 + p.splash);
+    return;
+  }
   const count = 1 + Math.round(strength*2*p.splash);
   let best = sim.spikes[0];
   for(const s of sim.spikes) if(s.len > best.len) best = s;
@@ -1090,8 +1264,14 @@ function frame(now){
   gl.uniform3fv(U.balls, sim.balls);
   gl.uniform1i(U.count, count);
   gl.uniform1f(U.time, t);
-  gl.uniform1f(U.warp, (0.020 + sim.e.turb*0.075*(0.45 + sim.level*1.1)) * (reduced?0.4:1));
+  const wisp = sim.p.wisp || 0;
+  gl.uniform1f(U.warp, (wisp
+    ? 0.012 + sim.level*0.012
+    : 0.020 + sim.e.turb*0.075*(0.45 + sim.level*1.1)) * (reduced?0.4:1));
   gl.uniform1f(U.invert, inverted ? 1 : 0);
+  gl.uniform1f(U.style, wisp);
+  gl.uniform2f(U.light, sim.w ? sim.w.lx : 0.20, sim.w ? sim.w.ly : 0.26);
+  gl.uniform1f(U.glow, sim.w ? sim.w.glow : 0.8);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   mLow.style.width  = (bands.low*100).toFixed(0)+'%';
@@ -1285,6 +1465,7 @@ addEventListener('keydown', e => {
   if(e.target !== document.body) return;
   if(e.code === 'Space'){ e.preventDefault(); listening ? stopMic() : startMic(); }
   if(e.key >= '1' && e.key <= '9') selectPreset(+e.key - 1);
+  if(e.key === '0' && sims.length > 9) selectPreset(9);
   if(e.key === 'i') setTheme(!inverted);
   if(e.key === 'c') allBtn.click();
   if(e.key === 'ArrowRight') selectPreset((active + 1) % sims.length);
