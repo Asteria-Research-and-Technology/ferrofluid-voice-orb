@@ -332,26 +332,20 @@ void main(){
     return;
   }
 
-  vec3 col = vec3(0.030, 0.028, 0.034);
-  col += 0.016 * smoothstep(2.0, 0.7, r);
+  /* no enclosure: the whole screen is the backlit field, and the fluid
+     plays across it. A soft falloff toward the corners keeps the light
+     feeling physical without drawing any boundary. */
+  vec3 col = vec3(0.965);
+  col *= 1.0 - 0.085 * smoothstep(0.35, 1.45, r);
 
-  float inD = smoothstep(1.001, 0.993, r);
-  if(inD > 0.001){
-    vec3 disc = vec3(0.965);
-    disc *= 1.0 - 0.055 * smoothstep(0.55, 1.0, r);
-    col = mix(col, disc, inD);
-  }
-  float ring = smoothstep(1.030, 1.020, r) * smoothstep(0.992, 1.000, r);
-  col = mix(col, vec3(0.115,0.110,0.125), ring);
-
-  if(r < 0.998 && uCount > 0){
+  if(uCount > 0){
     vec2 pw = p + turbulence(p, uTime) * uWarp;
     vec2 grad;
     float f = fieldGrad(pw, grad);
     float gmag = max(length(grad), 1e-4);
     float sd = (f - 1.0) / gmag;
     float px = 1.3 / uDiscR;
-    float a = smoothstep(-px, px, sd) * smoothstep(0.998, 0.988, r);
+    float a = smoothstep(-px, px, sd);
     if(a > 0.002) col = mix(col, vec3(0.050,0.047,0.057), a);
   }
 
@@ -650,22 +644,24 @@ function stepWisp(sim, dt, time){
   const w = sim.w;
   sim.excite = Math.max(0, sim.excite - dt*1.5);
 
-  /* the tumble, quicker when it is paying attention */
-  w.rot += dt*(0.30 + 0.18*sim.attn + p.turb*0.14);
+  /* the tumble, quicker when it is paying attention, and it truly
+     spins up while there is a voice in the room */
+  w.rot += dt*(0.30 + 0.18*sim.attn + p.turb*0.14 + sim.level*0.90);
 
   /* the wobble lives on springs so a push rings out instead of snapping;
-     a whisper of random drive keeps the surface alive even in silence */
+     a whisper of random drive keeps the surface alive even in silence,
+     and the voice itself churns the springs continuously */
   for(const h of w.harm){
-    h.ph += dt*h.rate*Math.PI*2*(0.6 + p.turb*0.6);
+    h.ph += dt*h.rate*Math.PI*2*(0.6 + p.turb*0.6 + sim.level*1.2);
     h.vel += -h.off*7.5*dt;
-    h.vel += (Math.random() - 0.5)*2.0*dt*(0.6 + G.life);
+    h.vel += (Math.random() - 0.5)*dt*(2.0*(0.6 + G.life) + sim.level*26.0);
     h.vel -= h.vel*Math.min(1, dt*(1.6 + p.visc*2.4));
     h.off += h.vel*dt;
   }
 
-  /* calm presence: level swells it a little, attention a little more */
-  const st = sim.level*0.20 + sim.attn*0.06;
-  w.swell += (st - w.swell)*Math.min(1, dt*3.0);
+  /* speech visibly swells the body, even spoken softly */
+  const st = sim.level*0.45 + sim.attn*0.10;
+  w.swell += (st - w.swell)*Math.min(1, dt*5.0);
 
   /* the inner light wanders on its own and leans where the focus leans */
   w.la += dt*0.30;
@@ -674,7 +670,7 @@ function stepWisp(sim, dt, time){
   w.lx += (tx - w.lx)*Math.min(1, dt*0.8);
   w.ly += (ty - w.ly)*Math.min(1, dt*0.8);
 
-  const gt = 0.72 + sim.level*0.45 + onsetPulse*0.18;
+  const gt = 0.72 + sim.level*0.70 + onsetPulse*0.25;
   w.glow += (gt - w.glow)*Math.min(1, dt*5.0);
 }
 
@@ -685,8 +681,9 @@ function buildWispBalls(sim, time){
   const put = (x,y,r) => { B[n*3]=x; B[n*3+1]=y; B[n*3+2]=r; n++; };
   const breath = Math.sin(sim.breathT*Math.PI*2);
   const swell = (1 + G.life*0.050*breath + w.swell) * (p.ball/0.30);
-  const cx = sim.leanX*0.9 + Math.sin(time*0.31 + sim.seed)*0.048;
-  const cy = sim.leanY*0.9 + sim.bob*0.10 + Math.cos(time*0.27 + sim.seed*2)*0.042;
+  const drift = 1 + sim.level*1.2;
+  const cx = sim.leanX*0.9 + Math.sin(time*0.31 + sim.seed)*0.048*drift;
+  const cy = sim.leanY*0.9 + sim.bob*0.10 + Math.cos(time*0.27 + sim.seed*2)*0.042*drift;
   /* three big overlapping lobes make the silhouette; lobe 0 is the nose
      with the longest reach, which is what turns the circle into an egg
      or a teardrop as it swings around. Recentre on the lobes' mean so
@@ -698,7 +695,7 @@ function buildWispBalls(sim, time){
   const L = [];
   for(let i=0;i<3;i++){
     const h = w.harm[i];
-    const a = w.rot + i*(Math.PI*2/3) + Math.sin(h.ph)*1.05;
+    const a = w.rot + i*(Math.PI*2/3) + Math.sin(h.ph)*(1.05 + sim.level*0.70);
     const d = (DB[i] + DR[i]*Math.sin(h.ph*0.9 + i*1.7) + h.off) * swell;
     const lx = Math.cos(a)*d, ly = Math.sin(a)*d*0.92;
     L.push([lx, ly, (RB[i] + 0.026*Math.sin(h.ph*1.3 + i)) * swell]);
@@ -1107,9 +1104,9 @@ function splash(sim, strength){
   sim.bobVel += strength*0.55*G.life;                     /* the whole body answers */
   if(Math.random() < 0.22 + strength*0.3) sim.focusTimer = Math.min(sim.focusTimer, 0.1);
   if(sim.p.wisp){
-    /* a syllable is a soft push into the wobble springs, not a spike */
+    /* a syllable is a real push into the wobble springs, still no spike */
     if(sim.w) for(const h of sim.w.harm)
-      h.vel += (Math.random() - 0.5)*2.4*strength*(0.4 + p.splash);
+      h.vel += (Math.random() - 0.5)*4.2*strength*(0.4 + p.splash);
     return;
   }
   const count = 1 + Math.round(strength*2*p.splash);
@@ -1287,14 +1284,16 @@ function frame(now){
   const count = buildBalls(sim, t);
 
   const r = stageRect;
+  const wisp = sim.p.wisp || 0;
   gl.uniform2f(U.center, r.x + r.w/2, r.y + r.h/2);
-  gl.uniform1f(U.discR, Math.min(r.w, r.h)*0.40);
+  /* discless: the wisp commands the frame, the fluid rests on the
+     bottom of the screen instead of inside a circle */
+  gl.uniform1f(U.discR, wisp ? Math.min(r.w, r.h)*0.62 : r.h*0.72);
   gl.uniform3fv(U.balls, sim.balls);
   gl.uniform1i(U.count, count);
   gl.uniform1f(U.time, t);
-  const wisp = sim.p.wisp || 0;
   gl.uniform1f(U.warp, (wisp
-    ? 0.012 + sim.level*0.012
+    ? 0.012 + sim.level*0.030
     : 0.020 + sim.e.turb*0.075*(0.45 + sim.level*1.1)) * (reduced?0.4:1));
   gl.uniform1f(U.invert, inverted ? 1 : 0);
   gl.uniform1f(U.style, wisp);

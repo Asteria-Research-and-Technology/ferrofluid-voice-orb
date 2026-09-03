@@ -27,7 +27,7 @@ The app opens on Wisp.
 7. **Levitate**. Held aloft by the rhythm of speech; when the talking stops it sinks back into the pool.
 8. **Mitosis**. The mass keeps dividing, and surface tension keeps drawing it back together.
 9. **Sigil**. A shaped magnet that swaps glyphs as you speak.
-10. **Baseline**. The reference ferrofluid: a backlit disc, dark fluid, spikes that answer your voice.
+10. **Baseline**. The reference ferrofluid: dark fluid on a backlit field, spikes that answer your voice.
 11. **Halo**. The wisp in daylight: paper ground, pale blue body, blue rim.
 
 ## Controls
@@ -38,7 +38,7 @@ The Fullscreen button (or the F key) clears the room: every control fades away a
 
 ## How it works
 
-Everything renders in one fragment shader. A CPU simulation drives up to 96 metaballs; the ferrofluid presets shade that field as dark fluid over a backlit disc, and the wisp presets shade the same field as an emissive soft body, using the signed distance to the isoline for the fringe and halo. Voice arrives through a single analyser: three self-normalizing bands, a voice gate, and a spectral-flux onset detector that pushes each syllable into the body as a physical impulse.
+Everything renders in one fragment shader. A CPU simulation drives up to 96 metaballs; the ferrofluid presets shade that field as dark fluid on a backlit field that fills the screen, and the wisp presets shade the same field as an emissive soft body, using the signed distance to the isoline for the fringe and halo. Voice arrives through a single analyser: three self-normalizing bands, a voice gate, and a spectral-flux onset detector that pushes each syllable into the body as a physical impulse.
 
 ## Update notes
 
@@ -46,6 +46,8 @@ Everything renders in one fragment shader. A CPU simulation drives up to 96 meta
 
 - Fullscreen mode: a Fullscreen button in the bar (and the F key) hides the preset rail and the bottom bar, asks the browser for true fullscreen, and leaves the single orb undulating in the center. Esc or the faint Exit chip in the corner restores the interface.
 - The cursor stays hidden until the mouse moves, and slips away again after a few still seconds, so nothing sits in the shot.
+- The enclosures are gone: no more disc and ring. The ferrofluid presets play across the whole screen on an edge-to-edge backlit field, and the wisp grew to command the frame.
+- The wisp answers the voice with real motion now: speech continuously churns the wobble springs, spins the tumble, widens the lobe swings, and swells the body, even at low levels, then it settles when the room goes quiet.
 - Wisp is now the opening preset. It swapped slots with Baseline, which now lives at 10; every preset is still one tap away.
 
 **2026-08-27**
